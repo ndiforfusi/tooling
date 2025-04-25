@@ -19,7 +19,7 @@ resource "aws_s3_bucket" "terraform_state" {
 
     transition {
       days          = 30
-      storage_class = "GLACIER"
+      storage_class = "INTELLIGENT_TIERING"
     }
 
     expiration {

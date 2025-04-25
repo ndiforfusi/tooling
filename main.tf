@@ -36,3 +36,9 @@ module "maven-sonarqube-server" {
 # #   table  = var.dynamodb_table
 # #   region = var.main-region
 # # }
+
+module "ecr-image-storage" {
+  source         = "./modules/ecr-image-storage"
+  ecr_image_repo = var.ecr_image_repo
+}
+

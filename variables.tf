@@ -92,3 +92,9 @@ variable "main-region" {
   type        = string
   default     = "us-west-2"
 }
+
+variable "ecr_image_repo" {
+  description = "elastic container image repository"
+  type        = string
+  default     = "addressbook"
+}

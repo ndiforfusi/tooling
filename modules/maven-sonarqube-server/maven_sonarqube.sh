@@ -29,12 +29,12 @@ echo "Verifying Maven installation..."
 /opt/maven/bin/mvn -version
 
 # Download and install SonarQube 10.5.1.90531
-# Install Maven 3.9.6
-LATEST_MAVEN_VERSION=3.9.6
-wget https://dlcdn.apache.org/maven/maven-3/${LATEST_MAVEN_VERSION}/binaries/apache-maven-${LATEST_MAVEN_VERSION}-bin.zip
-unzip -o apache-maven-${LATEST_MAVEN_VERSION}-bin.zip -d /opt
-sudo ln -sfn /opt/apache-maven-${LATEST_MAVEN_VERSION} /opt/maven
-
+SONARQUBE_VERSION=10.5.1.90531
+wget https://binaries.sonarsource.com/Distribution/sonarqube/sonarqube-${SONARQUBE_VERSION}.zip
+if [ $? -ne 0 ]; then
+    echo "Failed to download SonarQube. Exiting."
+    exit 1
+fi
 unzip -o sonarqube-${SONARQUBE_VERSION}.zip -d /opt
 sudo mv /opt/sonarqube-${SONARQUBE_VERSION} /opt/sonarqube
 
@@ -75,26 +75,26 @@ sudo systemctl start postgresql
 sudo systemctl enable postgresql
 
 # Verify PostgreSQL service status
-sudo systemctl status postgresql
+sudo systemctl status postgresql --no-pager
 
-echo "PostgreSQL installation and setup completed."
-
-#Create a database user named ddsonar.
-sudo -i -u postgres
+# Create a PostgreSQL user and database for SonarQube
+sudo -i -u postgres bash <<EOF
 createuser ddsonar
-psql
-ALTER USER ddsonar WITH ENCRYPTED password 'Team@123';
-CREATE DATABASE ddsonarqube OWNER ddsonar;
-GRANT ALL PRIVILEGES ON DATABASE ddsonarqube to ddsonar;
-\q
-Exit
+psql -c "ALTER USER ddsonar WITH ENCRYPTED PASSWORD 'Team@123';"
+psql -c "CREATE DATABASE ddsonarqube OWNER ddsonar;"
+psql -c "GRANT ALL PRIVILEGES ON DATABASE ddsonarqube TO ddsonar;"
+EOF
+
+# Confirm setup completion
+echo "PostgreSQL installation and database setup completed."
 
 # # Configure SonarQube to use PostgreSQL
-# sudo bash -c "cat <<EOF > /opt/sonarqube/conf/sonar.properties
-# sonar.jdbc.username=ddsonar
-# sonar.jdbc.password=Team@123
-# sonar.jdbc.url=jdbc:postgresql://localhost:5432/ddsonarqube
-# EOF"
+# Configure SonarQube to use PostgreSQL
+sudo bash -c "cat <<EOF > /opt/sonarqube/conf/sonar.properties
+sonar.jdbc.username=ddsonar
+sonar.jdbc.password=Team@123
+sonar.jdbc.url=jdbc:postgresql://localhost:5432/ddsonarqube
+EOF"
 
 # Set up SonarQube as a service
 echo -e "[Unit]
@@ -126,54 +126,52 @@ sudo systemctl start sonar.service
 sudo systemctl status sonar.service
 
 
-#!/bin/bash
 
-# Variables
-DOMAIN="sonarqube.dominionsystem.org"
-EMAIL="fusisoft@gmail.com"  # Change to your email for Let's Encrypt notifications
+# Update the system
+sudo apt update && sudo apt upgrade -y
 
-# Update package list and install dependencies
-sudo apt update
-sudo apt install -y nginx certbot python3-certbot-nginx
+# Install Nginx
+sudo apt install nginx -y
 
-# Start and enable NGINX service
-sudo systemctl start nginx
-sudo systemctl enable nginx
-
-# Allow NGINX in firewall
+# Adjust the firewall to allow HTTPS traffic
 sudo ufw allow 'Nginx Full'
 
-# Create an NGINX server block configuration for the domain
-sudo bash -c "cat > /etc/nginx/sites-available/$DOMAIN <<EOL
+# Install Certbot and Nginx plugin for Let's Encrypt
+sudo apt install certbot python3-certbot-nginx -y
+
+# Create an Nginx configuration for sonarqube reverse proxy
+sudo tee /etc/nginx/sites-available/sonarqube.conf > /dev/null <<EOL
 server {
     listen 80;
-    server_name $DOMAIN;
-    
+    server_name sonarqube.dominionsystem.org;
+
     location / {
-        proxy_pass http://127.0.0.1:9000; # Assuming SonarQube runs on port 9000
+        proxy_pass http://localhost:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
-
-    location ~ /.well-known/acme-challenge {
-        allow all;
-    }
 }
-EOL"
+EOL
 
-# Enable the new site by creating a symbolic link
-sudo ln -s /etc/nginx/sites-available/$DOMAIN /etc/nginx/sites-enabled/
+# Enable the sonarqube Nginx configuration
+sudo ln -s /etc/nginx/sites-available/sonarqube.conf /etc/nginx/sites-enabled/
 
-# Test NGINX configuration
+# Test Nginx configuration
 sudo nginx -t
 
-# Reload NGINX to apply the changes
+# Reload Nginx to apply changes
 sudo systemctl reload nginx
 
-# Obtain a Let's Encrypt SSL certificate for the domain using Certbot
-sudo certbot --nginx -d $DOMAIN --non-interactive --agree-tos --email $EMAIL --redirect
+# Obtain an SSL certificate using Certbot and configure Nginx
+sudo certbot --nginx -d sonarqube.dominionsystem.org --email fusisoft@gmail.com --non-interactive --agree-tos --redirect
 
-# Verify Certbot automatic renewal process
-sudo systemctl status certbot.timer
+# Setup a cron job to automatically renew the certificate
+echo "0 0 * * * /usr/bin/certbot renew --quiet" | sudo tee -a /etc/crontab > /dev/null
+
+# Restart Nginx to apply SSL configuration
+sudo systemctl restart nginx
+
+echo "sonarqube is now accessible via https://sonarqube.dominionsystem.org"
+
