@@ -9,8 +9,8 @@ module "jenkins-server" {
 module "s3-bucket" {
   source  = "terraform-aws-modules/s3-bucket/aws"
   version = "4.5.0"
-  bucket = var.bucket_name
-   versioning = {
+  bucket  = var.bucket_name
+  versioning = {
     enabled = true
   }
 }
