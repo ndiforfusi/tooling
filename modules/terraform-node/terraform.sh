@@ -2,7 +2,6 @@
 # Install Terraform
 echo "Installing java packages........"
 sudo apt-get update -y
-sudo apt-get install unzip -y
 sudo apt-get install openjdk-21-jdk -y
 
 #Installing aws cli

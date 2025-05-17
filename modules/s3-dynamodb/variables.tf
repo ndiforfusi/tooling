@@ -4,7 +4,8 @@ variable "bucket" {
   default     = "class38-terraform-backend-bucketo"
 }
 
-variable "table" {
+
+variable "DynamoDBtable" {
   description = "The name of the DynamoDB table"
   type        = string
   default     = "terraform-state-bucket-Azwe"
@@ -13,5 +14,5 @@ variable "table" {
 variable "region" {
   description = "The AWS region"
   type        = string
-  default     = "us-west-2"
+  default     = "us-west-1"
 }

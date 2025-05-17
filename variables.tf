@@ -82,7 +82,7 @@ variable "s3_bucket" {
 }
 
 variable "bucket_name" {
-  
+
 }
 variable "dynamodb_table" {
   description = "The name of the DynamoDB table for state locking"
