@@ -1,0 +1,65 @@
+name: Bootstrap Terraform Backend
+
+on:
+  workflow_dispatch:
+        inputs:
+          environment:
+            description: "Deployment Environment (dev, qa, uat, prod)"
+            required: true
+            default: "prod"
+            type: choice
+            options:
+              - dev
+              - prod
+              - qa
+              - uat
+          region:
+            description: "AWS Region"
+            required: true
+            default: "us-east-2"
+          action:
+            description: "Terraform action: apply (default) or destroy"
+            required: false
+            default: "apply"
+            type: choice
+            options:
+              - apply
+              - destroy
+        
+
+jobs:
+  bootstrap:
+    name: 🧱 Provision S3 + DynamoDB Backend
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: us-east-2
+      AWS_ACCOUNT_ID: 222353955460
+
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v3
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+
+      - name: Terraform Init
+        working-directory: ./bootstrap-backend
+        run: terraform init
+
+      - name: Terraform Action (apply or destroy)
+        working-directory: ./bootstrap-backend
+        run: |
+          if [ "${{ github.event.inputs.action }}" = "destroy" ]; then
+            terraform destroy -auto-approve
+          else
+            terraform apply -auto-approve
+          fi
