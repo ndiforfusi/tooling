@@ -7,7 +7,7 @@ variable "bucket" {
 variable "table" {
   description = "The name of the DynamoDB table"
   type        = string
-  default     = "terraform-state-locking"
+  default     = "terraform-state-locking-sal"
 }
 
 variable "region" {
