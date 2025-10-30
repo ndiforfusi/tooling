@@ -1,120 +1,184 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -euo pipefail
 
-### 1) System update & upgrade
-echo "Updating and upgrading system packages..."
-sudo apt-get update -y
-sudo apt-get upgrade -y
+########################
+# Config (edit as needed)
+########################
+DOMAIN="${DOMAIN:-jenkins.fusisoft.com}"
+EMAIL="${EMAIL:-fusisoft@gmail.com}"
 
-### 2) Docker cleanup & install
-echo "Removing older Docker versions if installed..."
-sudo apt-get remove -y docker docker-engine docker.io containerd runc || true
+# Non-interactive apt
+export DEBIAN_FRONTEND=noninteractive
 
-echo "Installing Docker dependencies..."
-sudo apt-get install -y \
-  apt-transport-https \
-  ca-certificates \
-  curl \
-  gnupg \
-  lsb-release
+echo "==> Using DOMAIN=${DOMAIN}"
+echo "==> Using EMAIL=${EMAIL}"
 
-echo "Adding Docker’s official GPG key..."
+########################
+# 0) Basic sanity
+########################
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run as root (sudo)."; exit 1
+fi
+
+# Keep track of invoking user for docker group
+INVOCATOR="${SUDO_USER:-${USER}}"
+
+########################
+# 1) System update & base tools
+########################
+echo "==> Updating system packages..."
+apt-get update -y
+apt-get upgrade -y
+apt-get install -y \
+  ca-certificates curl gnupg lsb-release \
+  apt-transport-https software-properties-common \
+  unzip git ufw
+
+########################
+# 2) Install Docker Engine
+########################
+echo "==> Installing Docker..."
+apt-get remove -y docker docker-engine docker.io containerd runc || true
+
+install -m 0755 -d /etc/apt/keyrings
 curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
-  | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+  | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+chmod a+r /etc/apt/keyrings/docker.gpg
 
-echo "Configuring Docker stable repository..."
+ARCH="$(dpkg --print-architecture)"
+CODENAME="$(lsb_release -cs)"
 echo \
-  "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] \
-  https://download.docker.com/linux/ubuntu \
-  $(lsb_release -cs) stable" \
-  | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  "deb [arch=${ARCH} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${CODENAME} stable" \
+  > /etc/apt/sources.list.d/docker.list
 
-echo "Updating package index for Docker..."
-sudo apt-get update -y
+apt-get update -y
+apt-get install -y docker-ce docker-ce-cli containerd.io
 
-echo "Installing Docker Engine..."
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+systemctl enable --now docker
 
-echo "Enabling and starting Docker service..."
-sudo systemctl enable docker
-sudo systemctl start docker
+# Docker group for both the invoking user and Jenkins (added later)
+usermod -aG docker "${INVOCATOR}" || true
 
-echo "Adding current user ($USER) to the Docker group..."
-sudo usermod -aG docker "$USER"
-echo "Docker installation complete."
+########################
+# 3) Java 17 + Maven
+########################
+echo "==> Installing OpenJDK 17 and Maven..."
+apt-get install -y openjdk-17-jdk maven
+update-alternatives --set java /usr/lib/jvm/java-1.17.0-openjdk-amd64/bin/java || true || true
 
-### 3) Install Java (OpenJDK 17)
-echo "Installing OpenJDK 17..."
-sudo apt-get install -y openjdk-17-jdk
+########################
+# 4) AWS CLI v2, kubectl, Helm (for builds/deploys)
+########################
+echo "==> Installing AWS CLI v2..."
+tmpdir="$(mktemp -d)"
+pushd "$tmpdir" >/dev/null
+curl -fsSLo awscliv2.zip "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip"
+unzip -q awscliv2.zip
+./aws/install --update
+popd >/dev/null
+rm -rf "$tmpdir"
 
-### 4) Jenkins installation
-echo "Adding Jenkins GPG key..."
+echo "==> Installing kubectl..."
+curl -fsSLo /usr/local/bin/kubectl \
+  "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
+chmod +x /usr/local/bin/kubectl
+kubectl version --client=true --short || true
+
+echo "==> Installing Helm..."
+curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+helm version || true
+
+########################
+# 5) Install Jenkins LTS
+########################
+echo "==> Installing Jenkins LTS..."
 curl -fsSL https://pkg.jenkins.io/debian/jenkins.io-2023.key \
-  | sudo tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+  | tee /usr/share/keyrings/jenkins-keyring.asc >/dev/null
 
-echo "Adding Jenkins APT repository..."
-echo \
-  "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] \
-  https://pkg.jenkins.io/debian binary/" \
-  | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian binary/" \
+  > /etc/apt/sources.list.d/jenkins.list
 
-echo "Updating package index for Jenkins..."
-sudo apt-get update -y
+apt-get update -y
+apt-get install -y jenkins
 
-echo "Installing Jenkins..."
-sudo apt-get install -y jenkins
+# Ensure Jenkins uses Java 17
+sed -i 's|^#*JAVA_HOME=.*|JAVA_HOME=/usr/lib/jvm/java-1.17.0-openjdk-amd64|' /etc/default/jenkins || true
 
-echo "Enabling and starting Jenkins service..."
-sudo systemctl enable jenkins
-sudo systemctl start jenkins
+# Allow Jenkins to run Docker
+usermod -aG docker jenkins || true
 
-### 5) Nginx & SSL reverse-proxy for Jenkins
-echo "Installing Nginx..."
-sudo apt-get install -y nginx
+systemctl daemon-reload
+systemctl enable --now jenkins
 
-echo "Allowing Nginx through UFW..."
-sudo ufw allow 'Nginx Full'
+########################
+# 6) Nginx + Certbot reverse proxy for Jenkins
+########################
+echo "==> Installing Nginx + Certbot..."
+apt-get install -y nginx certbot python3-certbot-nginx
 
-echo "Installing Certbot and the Nginx plugin..."
-sudo apt-get install -y certbot python3-certbot-nginx
+# UFW basic rules
+echo "==> Configuring UFW..."
+ufw allow OpenSSH || true
+ufw allow 'Nginx Full' || true
+# Enable UFW if not already enabled
+ufw --force enable || true
 
-echo "Creating Nginx site for Jenkins..."
-sudo tee /etc/nginx/sites-available/jenkins.conf > /dev/null <<'EOL'
+# Hardened Nginx site with WebSocket + headers
+echo "==> Writing Nginx server block for ${DOMAIN}..."
+cat >/etc/nginx/sites-available/jenkins.conf <<EOL
 server {
     listen 80;
-    server_name jenkins.dominionsystem.org;
+    listen [::]:80;
+    server_name ${DOMAIN};
 
+    # Redirect to HTTPS handled by certbot --redirect (will update server blocks)
     location / {
-        proxy_pass http://localhost:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host              \$host;
+        proxy_set_header X-Real-IP         \$remote_addr;
+        proxy_set_header X-Forwarded-For   \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_buffering off;
+        proxy_request_buffering off;
+
+        # WebSocket support for Jenkins
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
+
+    # Large timeouts for long-running operations
+    client_max_body_size 0;
+    proxy_read_timeout 600s;
+    proxy_connect_timeout 600s;
+    proxy_send_timeout 600s;
 }
 EOL
 
-echo "Enabling Jenkins Nginx config..."
-sudo ln -sf /etc/nginx/sites-available/jenkins.conf /etc/nginx/sites-enabled/
+ln -sfn /etc/nginx/sites-available/jenkins.conf /etc/nginx/sites-enabled/jenkins.conf
+rm -f /etc/nginx/sites-enabled/default || true
+nginx -t
+systemctl reload nginx
 
-echo "Testing Nginx configuration..."
-sudo nginx -t
+echo "==> Requesting Let's Encrypt certificate for ${DOMAIN}..."
+# This will also add the HTTPS server block and enable --redirect automatically
+certbot --nginx --non-interactive --agree-tos -m "${EMAIL}" -d "${DOMAIN}" --redirect
 
-echo "Reloading Nginx..."
-sudo systemctl reload nginx
+# Ensure systemd timer is active (default on ubuntu certbot package)
+systemctl enable --now certbot.timer
 
-echo "Obtaining Let’s Encrypt SSL certificate..."
-sudo certbot --nginx \
-  --non-interactive \
-  --agree-tos \
-  --email fusisoft@gmail.com \
-  -d jenkins.dominionsystem.org
+########################
+# 7) Jenkins URL + Info
+########################
+JENKINS_URL="https://${DOMAIN}"
+echo "JENKINS_ARGS=\"--prefix=/\"" >> /etc/default/jenkins || true
+systemctl restart jenkins
 
-echo "Setting up daily cron for Certbot renewal..."
-# This line ensures certbot renew runs quietly each day at midnight
-sudo bash -c 'echo "0 0 * * * root certbot renew --quiet" >> /etc/crontab'
+echo "==> Jenkins initial admin password:"
+if [[ -f /var/lib/jenkins/secrets/initialAdminPassword ]]; then
+  cat /var/lib/jenkins/secrets/initialAdminPassword
+else
+  echo "(Not yet generated; wait a few seconds and check /var/lib/jenkins/secrets/initialAdminPassword)"
+fi
 
-echo "Reloading Nginx to apply SSL..."
-sudo systemctl restart nginx
-
-echo "✅ Jenkins is now available at: https://jenkins.dominionsystem.org"
+echo "✅ Jenkins should be available at: ${JENKINS_URL}"
+echo "ℹ️  You must log out/in (or reboot) for Docker group membership to take effect for ${INVOCATOR} and jenkins users."
