@@ -3,3 +3,19 @@
 *.lock.hcl
 .terraform
 modules/*/.terraform
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfvars
+*.tfvars.json
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# OS/IDE
+.DS_Store
+.idea/
+.vscode/
