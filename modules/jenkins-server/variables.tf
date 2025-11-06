@@ -4,7 +4,7 @@ variable "instance_type" {
   default     = "t3.medium"
 }
 
-variable "key_name" {
+variable "ssh_key_name" {
   description = "The key name for the Jenkins server"
   type        = string
   default     = "Oregon-private-key"

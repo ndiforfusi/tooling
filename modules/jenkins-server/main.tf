@@ -124,7 +124,7 @@ resource "aws_instance" "jenkins_server" {
   user_data              = file("${path.module}/jenkins.sh")
 
   # Optional: allow SSH key login in addition to SSM
-  key_name = var.key_name
+  key_name = var.ssh_key_name
 
   # Root volume sizing for Jenkins
   root_block_device {

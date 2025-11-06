@@ -1,11 +1,13 @@
-region            = "us-east-1"
-ami_id            = "ami-0c55b159cbfafe1f0"
-instance_type     = "t2.medium"
-key_name          = "your-key-pair-name"
-security_group_id = "your-security-group-id"
-subnet_id         = "your-subnet-id"
-db_name           = "sonarqube_db"
-db_username       = "sonarqube_user"
-db_password       = "team34C"
-db_security_group_id = "your-db-security-group-id"
-db_subnet_group   = "your-db-subnet-group"
+# region                  = "us-west-2"
+# name_prefix             = "jenkins"
+# vpc_id                  = "vpc-xxxxxxxx"
+# subnet_id               = "subnet-xxxxxxxx"
+# ssh_allowed_cidrs       = ["203.0.113.0/24"] # replace with your office/VPN CIDR
+# instance_type           = "t3.medium"
+# associate_public_ip     = false
+
+# tags = {
+#   Project     = "cicd"
+#   Environment = "dev"
+#   Owner       = "platform"
+# }
