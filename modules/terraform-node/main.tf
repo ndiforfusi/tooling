@@ -39,6 +39,9 @@ data "aws_subnets" "default_public_in_az" {
     name   = "default-for-az"
     values = ["true"]
   }
+  tags = {
+    Tier = "public"
+  }
 }
 
 
