@@ -3,7 +3,7 @@ sudo tee /etc/nginx/sites-available/jenkins.conf >/dev/null <<'EOL'
 server {
     listen 80;
     listen [::]:80;
-    server_name jenkins.fusisoft.com;
+    server_name jenkins.nchanjicasey.com;
 
     location / {
         proxy_pass         http://127.0.0.1:8080;
@@ -28,7 +28,7 @@ for i in {1..30}; do curl -sI http://127.0.0.1:8080/login && break; echo "Waitin
 # Issue cert and auto-create HTTPS + redirect
 sudo apt-get update -y
 sudo apt-get install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d jenkins.fusisoft.com -m fusisoft@gmail.com --agree-tos --no-eff-email --non-interactive --redirect
+sudo certbot --nginx -d jenkins.nchanjicasey.com -m alaintonfack167@gmail.com --agree-tos --no-eff-email --non-interactive --redirect
 
 # Auto-renew
 sudo systemctl enable --now certbot.timer || true

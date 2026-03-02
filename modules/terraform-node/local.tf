@@ -7,7 +7,7 @@ data "aws_ssm_parameter" "al2" {
 }
 
 locals {
-  subnet_id = data.aws_subnets.default_public_in_az.ids[0]
+  subnet_id = try(data.aws_subnets.default_public_in_az.ids[0], null)
 }
 
 
